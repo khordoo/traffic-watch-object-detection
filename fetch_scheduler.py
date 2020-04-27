@@ -3,8 +3,18 @@ import psycopg2
 from datetime import datetime
 import time
 from collections import defaultdict
-import json
 from dateutil import tz
+from flask import Flask
+from services import ImageAnalysisService, Database, HistoricalImagePoinst
+from config import Config
+
+app = Flask(__name__)
+config = Config()
+image_service = ImageAnalysisService()
+database = Database(config)
+historical_detections = HistoricalImagePoinst(database)
+TARGET_LABELS = ['car', 'person', 'truck', 'bus', 'train', 'bicycle', 'motorbike', 'cat', 'dog']
+
 
 class Postgres:
     def __init__(self):
@@ -20,9 +30,13 @@ class Postgres:
         self.conn.commit()
         print('Inserted camera:', camera['id'])
 
-
     def insert(self, query):
         self.cursor.execute(query)
+        self.conn.commit()
+
+    def multi_insert(self, queries):
+        for query in queries:
+            self.cursor.execute(query)
         self.conn.commit()
 
 
@@ -33,34 +47,47 @@ class Scheduler:
         self.insert_cameras(self.cameras)
         self.session = requests.Session()
         self.detection_url = 'http://127.0.0.1:5000/analysis'
-        # self.fetch_images()
         self.FETCHING_INTERVAL_SEC = 300
 
     def insert_cameras(self, cameras):
         for camera in cameras:
             self.database.insert_camera(camera)
 
-    def insert_detection(self, detection):
+    def insert_detection(self, detections):
         # insert into counts
-        confidences = detection['countsConfidence']
-        # Insert counts
-        for object_type, count in detection['counts'].items():
-            confidence = confidences[object_type]
-            counts = f"INSERT INTO count (camera_id , time,label,count, confidence) VALUES({detection['camera']['id']},'{detection['time']}','{object_type}',{count},{confidence})"
-            self.database.insert(counts)
+        location_queries = []
+        count_queries = []
+        for detection in detections:
+            confidences = detection['countsConfidence']
+            # Creating counts queries
+            for object_type, count in detection['counts'].items():
+                if object_type not in TARGET_LABELS:
+                    continue
+                confidence = confidences[object_type]
+                counts = f"INSERT INTO count (camera_id , time,label,count, confidence) VALUES({detection['camera']['id']},'{detection['time']}','{object_type}',{count},{confidence})"
+                count_queries.append(counts)
 
-        # Insert indivdual objects
-        for item in detection["detection"]:
-            x0 = item['topleft']['x']
-            y0 = item['topleft']['y']
-            x1 = item['bottomright']['x']
-            y1 = item['bottomright']['y']
-            xc = x0 + 0.5 * (x1 - x0)
-            yc = y0 + 0.5 * (y1 - y0)
-            query = f"INSERT INTO object_location (camera_id ,time  ,label  , x_top_left ,y_top_left  ,x_bottom_right , y_bottom_right ,x_center , y_center ,confidence  ) " \
-                    f"VALUES ({detection['camera']['id']},'{detection['time']}' , '{item['label']}',{x0},{y0} ,{x1} ,{y1} ,{xc},{yc},{item['confidence']} )"
-            self.database.insert(query)
-            print('Inserte object: ', item['label'])
+            # Creating individual objects queries
+            for item in detection["detection"]:
+                if item['label'] not in TARGET_LABELS:
+                    continue
+                x0 = item['topleft']['x']
+                y0 = item['topleft']['y']
+                x1 = item['bottomright']['x']
+                y1 = item['bottomright']['y']
+                xc = x0 + 0.5 * (x1 - x0)
+                yc = y0 + 0.5 * (y1 - y0)
+                query = f"INSERT INTO object_location (camera_id ,time  ,label  , x_top_left ,y_top_left  ,x_bottom_right , y_bottom_right ,x_center , y_center ,confidence  ) " \
+                        f"VALUES ({detection['camera']['id']},'{detection['time']}' , '{item['label']}',{x0},{y0} ,{x1} ,{y1} ,{xc},{yc},{item['confidence']} )"
+                location_queries.append(query)
+
+        if count_queries:
+            self.database.multi_insert(count_queries)
+        print(f'Inserted a total of {len(count_queries)} into the count table')
+
+        if location_queries:
+            self.database.multi_insert(location_queries)
+        print(f'Inserted a total of: {len(location_queries)} into objects location table')
 
     def get_camera_locations(self):
         cameras = []
@@ -81,45 +108,38 @@ class Scheduler:
         while True:
             try:
                 start_time = datetime.now()
-                i = 0
-                for detection in self.fetch_images():
-                    i += 1
-                    print(f'Insert detection: {i}')
-                    self.insert_detection(detection)
+                detections = self.fetch_images()
+                self.insert_detection(detections)
 
                 elapsed_time = (datetime.now() - start_time).total_seconds()
-                waitting_time = self.FETCHING_INTERVAL_SEC - elapsed_time
+                waiting_time = self.FETCHING_INTERVAL_SEC - elapsed_time
                 print('Elapsed time: ', elapsed_time)
-                print('Waitting time:', waitting_time)
-                if waitting_time < 0 or elapsed_time > self.FETCHING_INTERVAL_SEC:
-                    waitting_time = 0
-                print('Waiting for :', waitting_time, ' sec.')
-                time.sleep(waitting_time)  # 5 minutes
+                print('Waiting time:', waiting_time)
+                if waiting_time < 0 or elapsed_time > self.FETCHING_INTERVAL_SEC:
+                    waiting_time = 0
+                print('Waiting for :', waiting_time, ' sec.')
+                time.sleep(waiting_time)  # 5 minutes
             except Exception as err:
                 print(f'Exception happened :{err} , Time : ', datetime.now())
 
     def fetch_images(self):
         detections = []
-        i = 0
-        for camera in self.cameras:
-            counts=defaultdict(int)
-            confidence=defaultdict(float)
-            i += 1
+        for i, camera in enumerate(self.cameras):
+            counts = defaultdict(int)
+            confidence = defaultdict(float)
             print(f'Fetching camera {i}/{len(self.cameras)}')
-            detection = self.session.post(self.detection_url, json={
+            prediction = image_service.detect({
                 "image": camera['image_url']
             })
-            detection = detection.json()['detections']
-            detection=json.loads(detection)
+            detection = prediction['detections']
             for item in detection:
                 counts[item['label']] += 1
                 confidence[item['label']] += float(item['confidence'])
             # Average confidence per group
             for key, value in confidence.items():
                 confidence[key] = value / counts[key]
-            utc_time=datetime.now(tz=tz.UTC)
+            utc_time = datetime.now(tz=tz.UTC)
             calgary_time = utc_time.astimezone(tz.gettz('America/Edmonton')).isoformat()
-            #print('Calgry time:',calgary_time) 
             detections.append(
                 {"camera": camera, "detection": detection, "counts": counts, "countsConfidence": confidence,
                  "time": calgary_time})
