@@ -27,11 +27,10 @@ class ImageAnalysisService:
         """Detects the object in image using YOLO"""
         return self._run_detection(self._parse_params(request))
 
-    def _parse_params(self, request):
+    def _parse_params(self, payload):
         """Parses the request params"""
         try:
             default_params = {}
-            payload = request.get_json(force=True)
             default_params['image'] = payload['image']
             default_params['createImage'] = payload.get('createImage', False)
             default_params['summerize'] = payload.get('summerize', False)
