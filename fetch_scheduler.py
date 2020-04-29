@@ -7,7 +7,11 @@ from dateutil import tz
 from flask import Flask
 from services import ImageAnalysisService, Database, HistoricalImagePoinst
 from config import Config
+import logging
 
+logging.basicConfig(format='%(asctime)-15s %(message)s')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 app = Flask(__name__)
 config = Config()
 image_service = ImageAnalysisService()
@@ -18,26 +22,37 @@ TARGET_LABELS = ['car', 'person', 'truck', 'bus', 'train', 'bicycle', 'motorbike
 
 class Postgres:
     def __init__(self):
-        self.conn = psycopg2.connect(host="localhost", database="azure_ai", user="postgres", password="postgres")
-        self.cursor = self.conn.cursor()
+        self.connect()
         self.cursor.execute('DELETE FROM camera')
         self.conn.commit()
+
+    def connect(self):
+        self.conn = psycopg2.connect(host="localhost", database="azure_ai", user="postgres", password="postgres")
+        self.cursor = self.conn.cursor()
 
     def insert_camera(self, camera):
         self.cursor.execute(
             f"INSERT INTO camera (id,address,region,latitude,longitude) VALUES({camera['id']}, '{camera['address']}', '{camera['region']}', {camera['latitude']}, {camera['longitude']})")
 
         self.conn.commit()
-        print('Inserted camera:', camera['id'])
+        logger.info(f"Inserted camera: {camera['id']}")
 
     def insert(self, query):
-        self.cursor.execute(query)
-        self.conn.commit()
+        try:
+            self.cursor.execute(query)
+            self.conn.commit()
+        except Exception as err:
+            logger.error(f'Exception while trying to commit to the database:  {err}')
+            self.connect()
 
     def multi_insert(self, queries):
-        for query in queries:
-            self.cursor.execute(query)
-        self.conn.commit()
+        try:
+            for query in queries:
+                self.cursor.execute(query)
+            self.conn.commit()
+        except Exception as err:
+            logger.error(f'Exception while trying to multi commit to the database:  {err}')
+            self.connect()
 
 
 class Scheduler:
@@ -53,7 +68,7 @@ class Scheduler:
         for camera in cameras:
             self.database.insert_camera(camera)
 
-    def insert_detection(self, detections):
+    def insert_detections(self, detections):
         # insert into counts
         location_queries = []
         count_queries = []
@@ -83,11 +98,11 @@ class Scheduler:
 
         if count_queries:
             self.database.multi_insert(count_queries)
-        print(f'Inserted a total of {len(count_queries)} into the count table')
+            logger.info(f'Inserted {len(count_queries)} records into the count table')
 
         if location_queries:
             self.database.multi_insert(location_queries)
-        print(f'Inserted a total of: {len(location_queries)} into objects location table')
+            logger.info(f'Inserted {len(location_queries)} records into objects_location table')
 
     def get_camera_locations(self):
         cameras = []
@@ -109,25 +124,26 @@ class Scheduler:
             try:
                 start_time = datetime.now()
                 detections = self.fetch_images()
-                self.insert_detection(detections)
+                self.insert_detections(detections)
 
                 elapsed_time = (datetime.now() - start_time).total_seconds()
                 waiting_time = self.FETCHING_INTERVAL_SEC - elapsed_time
-                print('Elapsed time: ', elapsed_time)
-                print('Waiting time:', waiting_time)
+                logger.info(f'Elapsed time: {elapsed_time}')
+                logger.info(f'Waiting time: {waiting_time}')
                 if waiting_time < 0 or elapsed_time > self.FETCHING_INTERVAL_SEC:
                     waiting_time = 0
-                print('Waiting for :', waiting_time, ' sec.')
+                logger.info(f'Waiting for : {waiting_time} sec.')
                 time.sleep(waiting_time)  # 5 minutes
             except Exception as err:
-                print(f'Exception happened :{err} , Time : ', datetime.now())
+                logger.error(f'Exception happened :{err} , Time : ', datetime.now())
+                self.database.re
 
     def fetch_images(self):
         detections = []
-        for i, camera in enumerate(self.cameras):
+        for camera_id, camera in enumerate(self.cameras):
             counts = defaultdict(int)
             confidence = defaultdict(float)
-            print(f'Fetching camera {i}/{len(self.cameras)}')
+            logger.info(f'Fetching camera {camera_id}/{len(self.cameras)}')
             prediction = image_service.detect({
                 "image": camera['image_url']
             })
