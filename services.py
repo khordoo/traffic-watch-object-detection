@@ -3,8 +3,6 @@ import base64
 import skimage.io as io
 import numpy as np
 import psycopg2
-from PIL import Image
-from io import BytesIO
 from werkzeug.exceptions import BadRequest
 from collections import defaultdict
 from ast import literal_eval as make_tuple
@@ -23,9 +21,9 @@ class ImageAnalysisService:
         self.DEFAULT_DRAW_COLOR = (0, 255, 0)
         self.target_labels = ['car', 'person', 'bus', 'truck', 'bicycle', 'motorbike']
 
-    def detect(self, request):
+    def detect(self, payload):
         """Detects the object in image using YOLO"""
-        return self._run_detection(self._parse_params(request))
+        return self._run_detection(self._parse_params(payload))
 
     def _parse_params(self, payload):
         """Parses the request params"""
@@ -48,15 +46,13 @@ class ImageAnalysisService:
     def _run_detection(self, params):
         image = self._parse_image(params)
         detections = self.yolo.detect(image)
-        return self._format_results(image, detections, params)
+        return self._format_results(image, detections,params)
 
     def _parse_image(self, params):
-        if params['image'].startswith('http'):
+        if isinstance(params['image'], str) and params['image'].startswith('http'):
             return io.imread(params['image'])
         else:
-            bgr_encoded_image = Image.open(BytesIO(base64.b64decode(params['image'])))
-            rgb_encoded_image = cv2.cvtColor(np.array(bgr_encoded_image), cv2.COLOR_BGR2RGB)
-            return rgb_encoded_image
+            return params['image']
 
     def _format_results(self, image, detections, params):
 

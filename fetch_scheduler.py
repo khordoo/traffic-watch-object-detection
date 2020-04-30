@@ -1,4 +1,3 @@
-import requests
 import psycopg2
 from datetime import datetime
 import time
@@ -8,6 +7,10 @@ from flask import Flask
 from services import ImageAnalysisService, Database, HistoricalImagePoinst
 from config import Config
 import logging
+import concurrent.futures as futures
+import concurrent
+import requests
+import skimage.io as io
 
 logging.basicConfig(format='%(asctime)-15s %(message)s')
 logger = logging.getLogger(__name__)
@@ -59,10 +62,11 @@ class Scheduler:
     def __init__(self):
         self.database = Postgres()
         self.cameras = self.get_camera_locations()
+        self.camera_ids = list(map(lambda camera: camera['id'], self.cameras))
         self.insert_cameras(self.cameras)
         self.session = requests.Session()
         self.detection_url = 'http://127.0.0.1:5000/analysis'
-        self.FETCHING_INTERVAL_SEC = 300
+        self.FETCHING_INTERVAL_SEC = 600 #10 minutes
 
     def insert_cameras(self, cameras):
         for camera in cameras:
@@ -79,7 +83,7 @@ class Scheduler:
                 if object_type not in TARGET_LABELS:
                     continue
                 confidence = confidences[object_type]
-                counts = f"INSERT INTO count (camera_id , time,label,count, confidence) VALUES({detection['camera']['id']},'{detection['time']}','{object_type}',{count},{confidence})"
+                counts = f"INSERT INTO count (camera_id , time,label,count, confidence) VALUES({detection['cameraId']},'{detection['time']}','{object_type}',{count},{confidence})"
                 count_queries.append(counts)
 
             # Creating individual objects queries
@@ -93,7 +97,7 @@ class Scheduler:
                 xc = x0 + 0.5 * (x1 - x0)
                 yc = y0 + 0.5 * (y1 - y0)
                 query = f"INSERT INTO object_location (camera_id ,time  ,label  , x_top_left ,y_top_left  ,x_bottom_right , y_bottom_right ,x_center , y_center ,confidence  ) " \
-                        f"VALUES ({detection['camera']['id']},'{detection['time']}' , '{item['label']}',{x0},{y0} ,{x1} ,{y1} ,{xc},{yc},{item['confidence']} )"
+                        f"VALUES ({detection['cameraId']},'{detection['time']}' , '{item['label']}',{x0},{y0} ,{x1} ,{y1} ,{xc},{yc},{item['confidence']} )"
                 location_queries.append(query)
 
         if count_queries:
@@ -123,7 +127,7 @@ class Scheduler:
         while True:
             try:
                 start_time = datetime.now()
-                detections = self.fetch_images()
+                detections = self.detect_objects()
                 self.insert_detections(detections)
 
                 elapsed_time = (datetime.now() - start_time).total_seconds()
@@ -135,18 +139,22 @@ class Scheduler:
                 logger.info(f'Waiting for : {waiting_time} sec.')
                 time.sleep(waiting_time)  # 5 minutes
             except Exception as err:
-                logger.error(f'Exception happened :{err} , Time : {datetime.now().isoformat()}',exc_info=True)
-                
+                logger.error(f'Exception happened :{err} , Time : {datetime.now().isoformat()}', exc_info=True)
 
-    def fetch_images(self):
+    def detect_objects(self):
+        images = self.async_fetch_images(self.camera_ids)
+        logger.info(f'Performing object detection in Yolo')
         detections = []
-        for camera_id, camera in enumerate(self.cameras):
+        for bundle in images:
+            camera_id, camera_image = bundle
             counts = defaultdict(int)
             confidence = defaultdict(float)
-            logger.info(f'Fetching camera {camera_id}/{len(self.cameras)}')
-            prediction = image_service.detect({
-                "image": camera['image_url']
-            })
+
+            payload = {
+                "camera_id": camera_id,
+                "image": camera_image
+            }
+            prediction = image_service.detect(payload)
             detection = prediction['detections']
             for item in detection:
                 counts[item['label']] += 1
@@ -157,10 +165,28 @@ class Scheduler:
             utc_time = datetime.now(tz=tz.UTC)
             calgary_time = utc_time.astimezone(tz.gettz('America/Edmonton')).isoformat()
             detections.append(
-                {"camera": camera, "detection": detection, "counts": counts, "countsConfidence": confidence,
+                {"cameraId": camera_id, "detection": detection, "counts": counts, "countsConfidence": confidence,
                  "time": calgary_time})
 
         return detections
+
+    def async_fetch_images(self, camera_ids):
+        def get_image(camera_id):
+            url = f'http://trafficcam.calgary.ca/loc{camera_id}.jpg'
+            image = io.imread(url)
+            return image
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            download_images = {executor.submit(get_image, camera_id): camera_id
+                               for camera_id in camera_ids}
+            camera_images = []
+            s_time = time.time()
+            for future in concurrent.futures.as_completed(download_images):
+                camera_id = download_images[future]
+                camera_images.append((camera_id, future.result()))
+            duration = time.time() - s_time
+            logger.info(f'Fetched {len(camera_ids)} camera images in {duration} seconds')
+        return camera_images
 
 
 Scheduler().run()
