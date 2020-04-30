@@ -135,8 +135,8 @@ class Scheduler:
                 logger.info(f'Waiting for : {waiting_time} sec.')
                 time.sleep(waiting_time)  # 5 minutes
             except Exception as err:
-                logger.error(f'Exception happened :{err} , Time : ', datetime.now())
-                self.database.re
+                logger.error(f'Exception happened :{err} , Time : {datetime.now().isoformat()}',exc_info=True)
+                
 
     def fetch_images(self):
         detections = []
