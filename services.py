@@ -25,10 +25,11 @@ class ImageAnalysisService:
         """Detects the object in image using YOLO"""
         return self._run_detection(self._parse_params(payload))
 
-    def _parse_params(self, payload):
+    def _parse_params(self, request):
         """Parses the request params"""
         try:
             default_params = {}
+            payload = request.get_json(force=True)
             default_params['image'] = payload['image']
             default_params['createImage'] = payload.get('createImage', False)
             default_params['summerize'] = payload.get('summerize', False)
@@ -84,7 +85,8 @@ class ImageAnalysisService:
                 point_top_left = (detection['topleft']['x'], detection['topleft']['y'])
                 point_bottom_right = (detection['bottomright']['x'], detection['bottomright']['y'])
                 image = cv2.rectangle(image, point_top_left, point_bottom_right, params['drawRGBColor'], 2)
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = image_resize(image, height=200, width=400)
         return image
 
@@ -106,8 +108,12 @@ class Database:
 
     def fetch(self, query):
         self.cursor.execute(query)
-        colnames = [desc[0] for desc in self.cursor.description]
-        return self.cursor.fetchall(), colnames
+        detection_names = [desc[0] for desc in self.cursor.description]
+        detection_values = self.cursor.fetchall()
+        grouped = [dict(zip(detection_names, detection))
+                   for detection in detection_values
+                   ]
+        return grouped
 
     def fetch_counts(self, camera_id=75, entity='car', time_bucket='hour', number_of_records=24):
         """Fetches the  top {} most recent records for the {entity} from the database"""
@@ -129,13 +135,14 @@ class HistoricalImagePoinst:
         """Draws a circle at the central detected location of an object """
         params = self._parse_params(request)
         query = f"select * from public.object_location where camera_id={params['cameraId']} and label='{params['label']}' and confidence >{params['confidenceThreshold']} ;"
-        records, column_names = self.database.fetch(query)
+        records = self.database.fetch(query)
         image = io.imread(self.image_url.format(params['cameraId']))
 
         for record in records:
-            color = self._apply_oppacity(params['color'], record[-4])
-            image = cv2.circle(image, (record[-3], record[-2]), 5, color, -1)
-        return self.base64_encoded(image)
+            color = self._apply_oppacity(params['color'], record['confidence'])
+            image = cv2.circle(image, (int(record['x_center']), int(record['y_center'])), 5, color, -1)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return self.base64_encoded(image_rgb)
 
     def _parse_params(self, request):
         """Parses the request params"""
@@ -155,9 +162,11 @@ class HistoricalImagePoinst:
         except Exception as err:
             raise BadRequest(f"Bad Request: {err}")
 
-    def _apply_oppacity(self, color, oppacity):
+    def _apply_oppacity(self, color, opacity):
+        if opacity > 1:
+            opacity = 0.99
         color = np.array(color)
-        color = color * float(oppacity)
+        color = color * float(opacity)
         return tuple(map(int, color))
 
     def base64_encoded(self, image):

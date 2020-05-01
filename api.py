@@ -1,11 +1,12 @@
 import simplejson
 from flask import Flask, request, abort
-from flask_cors import cross_origin
+from flask_cors import CORS
 import werkzeug
 from services import ImageAnalysisService, Database, HistoricalImagePoinst
 from config import Config
 
 app = Flask(__name__)
+CORS(app)
 config = Config()
 image_service = ImageAnalysisService()
 database = Database(config)
@@ -13,7 +14,6 @@ historical_detections = HistoricalImagePoinst(database)
 
 
 @app.route('/analysis', methods=['POST', 'GET'])
-@cross_origin()
 def index():
     if request.method == 'GET':
         return """<h1>Yep! It works!</h1> \n Send POST request for object detection."""
@@ -35,7 +35,6 @@ def index():
 
 
 @app.route('/historical', methods=['POST', 'GET'])
-@cross_origin()
 def objects_history():
     if request.method == 'GET':
         return """<h1>Yep! It works!</h1> \n Send POST request for getting the historical object locations."""

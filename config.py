@@ -11,7 +11,7 @@ class Config:
 
     @property
     def postgres_host(self):
-        return self._env_var("POSTGRES_DATABASE_HOST", required=True)
+        return self._env_var("POSTGRES_DATABASE_HOST", default='localhost', required=True)
 
     @property
     def postgres_database_name(self):
@@ -19,8 +19,8 @@ class Config:
 
     @property
     def postgres_username(self):
-        return self._env_var("POSTGRES_DATABASE_USERNAME", required=True)
+        return self._env_var("POSTGRES_DATABASE_USERNAME", default='postgres', required=True)
 
     @property
     def postgres_password(self):
-        return self._env_var("POSTGRES_DATABASE_PASSWORD", required=True)
+        return self._env_var("POSTGRES_DATABASE_PASSWORD", default='postgres', required=True)

@@ -1,4 +1,5 @@
 import psycopg2
+from csv import DictReader
 from datetime import datetime
 import time
 from collections import defaultdict
@@ -11,6 +12,7 @@ import concurrent.futures as futures
 import concurrent
 import requests
 import skimage.io as io
+
 
 logging.basicConfig(format='%(asctime)-15s %(message)s')
 logger = logging.getLogger(__name__)
@@ -28,15 +30,33 @@ class Postgres:
         self.connect()
         self.cursor.execute('DELETE FROM camera')
         self.conn.commit()
+        self.insert_communities()
 
     def connect(self):
         self.conn = psycopg2.connect(host="localhost", database="azure_ai", user="postgres", password="postgres")
         self.cursor = self.conn.cursor()
 
-    def insert_camera(self, camera):
-        self.cursor.execute(
-            f"INSERT INTO camera (id,address,region,latitude,longitude) VALUES({camera['id']}, '{camera['address']}', '{camera['region']}', {camera['latitude']}, {camera['longitude']})")
+    def insert_communities(self):
+        query = """
+        DROP TABLE  IF EXISTS calgary_communities CASCADE ;
+        CREATE TABLE calgary_communities (id serial primary key,name VARCHAR(64),geom GEOMETRY);
+        CREATE INDEX areas_polygon_idx ON calgary_communities USING GIST (geom);
+        """
+        self.cursor.execute(query)
+        self.conn.commit()
 
+        with open('data/calgary_communities_layer.csv', 'r') as f:
+            reader = DictReader(f)
+            for feature in reader:
+                query = f"""INSERT INTO calgary_communities (name, geom) VALUES ('{feature["NAME"]}',ST_GeometryFromText('{feature["the_geom"]}'))"""
+                self.cursor.execute(query)
+            self.conn.commit()
+        logger.info(f'Inserted calgary community boundaries into the database')
+
+    def insert_camera(self, camera):
+        geometry = f'ST_SetSRID(ST_POINT({camera["longitude"]}, {camera["latitude"]}), 4326)'
+        query = f"INSERT INTO camera (id,address,region,latitude,longitude,location) VALUES({camera['id']}, '{camera['address']}', '{camera['region']}', {camera['latitude']}, {camera['longitude']},{geometry})"
+        self.cursor.execute(query)
         self.conn.commit()
         logger.info(f"Inserted camera: {camera['id']}")
 
@@ -66,7 +86,7 @@ class Scheduler:
         self.insert_cameras(self.cameras)
         self.session = requests.Session()
         self.detection_url = 'http://127.0.0.1:5000/analysis'
-        self.FETCHING_INTERVAL_SEC = 600 #10 minutes
+        self.FETCHING_INTERVAL_SEC = 600  # 10 minutes
 
     def insert_cameras(self, cameras):
         for camera in cameras:
@@ -189,4 +209,5 @@ class Scheduler:
         return camera_images
 
 
-Scheduler().run()
+if __name__ == '__main__':
+    Scheduler().run()
