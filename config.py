@@ -15,7 +15,7 @@ class Config:
 
     @property
     def postgres_database_name(self):
-        return self._env_var("POSTGRES_DATABASE_NAME", required=True)
+        return self._env_var("POSTGRES_DATABASE_NAME", default='azure_ai', required=True)
 
     @property
     def postgres_username(self):

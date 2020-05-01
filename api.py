@@ -15,6 +15,7 @@ historical_detections = HistoricalImagePoinst(database)
 
 @app.route('/analysis', methods=['POST', 'GET'])
 def index():
+    """Performs a real time object detection"""
     if request.method == 'GET':
         return """<h1>Yep! It works!</h1> \n Send POST request for object detection."""
 
@@ -22,7 +23,8 @@ def index():
         try:
             if not request.json:
                 abort(400)
-            prediction = image_service.detect(request)
+            payload = request.get_json(force=True)
+            prediction = image_service.detect(payload)
             prediction['detections'] = simplejson.dumps(prediction['detections'])
             response = app.response_class(
                 response=simplejson.dumps(prediction),
@@ -36,6 +38,7 @@ def index():
 
 @app.route('/historical', methods=['POST', 'GET'])
 def objects_history():
+    """Create historical cloud of detect point in a location"""
     if request.method == 'GET':
         return """<h1>Yep! It works!</h1> \n Send POST request for getting the historical object locations."""
     if request.method == 'POST':
