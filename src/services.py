@@ -6,7 +6,7 @@ import psycopg2
 from werkzeug.exceptions import BadRequest
 from collections import defaultdict
 from ast import literal_eval as make_tuple
-from yolo import YOLO
+from src.yolo import YOLO
 
 
 class ImageAnalysisService:

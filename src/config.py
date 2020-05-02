@@ -24,3 +24,7 @@ class Config:
     @property
     def postgres_password(self):
         return self._env_var("POSTGRES_DATABASE_PASSWORD", default='postgres', required=True)
+
+    @property
+    def historical_time_window_size(self):
+        return self._env_var("PREDICTION_HISTORICAL_TIME_WINDOWS_SIZE", default=24 * 4, required=True)

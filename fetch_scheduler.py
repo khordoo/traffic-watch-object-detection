@@ -5,8 +5,8 @@ import time
 from collections import defaultdict
 from dateutil import tz
 from flask import Flask
-from services import ImageAnalysisService, Database, HistoricalImagePoinst
-from config import Config
+from src.services import ImageAnalysisService, Database, HistoricalImagePoinst
+from src.config import Config
 import logging
 import concurrent.futures as futures
 import concurrent
@@ -86,7 +86,7 @@ class Scheduler:
         self.insert_cameras(self.cameras)
         self.session = requests.Session()
         self.detection_url = 'http://127.0.0.1:5000/analysis'
-        self.FETCHING_INTERVAL_SEC = 600  # 10 minutes
+        self.FETCHING_INTERVAL_SEC = 720  # 12 minutes
 
     def insert_cameras(self, cameras):
         for camera in cameras:
