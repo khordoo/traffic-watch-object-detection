@@ -20,4 +20,5 @@ anomalies in the movement data. It can help detect dangerous driving patterns or
 
 Here is an example of vehicle movement pattern for a specific location:
 
-![image](https://user-images.githubusercontent.com/32692718/82127375-4e0fa180-9770-11ea-9457-1f1eb5cc7b4c.png)
+![image](https://user-images.githubusercontent.com/32692718/82127524-76e46680-9771-11ea-9bab-53326c1b8796.png)
+
