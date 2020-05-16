@@ -1,7 +1,7 @@
-### Smart Traffic and Pedestrian movement analyzer 
+### Smart Traffic and Pedestrian movement analyzer(Traffic Watch) 
 
-This repository contains the code that combines the CNN and RNN to capture the traffic pattern acroos the City of Calgary and 
-make a prediction about the volume of the traffic across the city.
+This repository contains the code that combines object detection(YOLO), time-series predictions (LSTM) and anomaly detection to capture the cars and pedestrian movement patterns across the City of Calgary in real-time. It 
+also uses the historical movement data to make a prediction about the volume of the traffic in the next 24 hours.
 
 Here is an screen shot of the application UI:
 ![image](https://user-images.githubusercontent.com/32692718/82127114-7a2a2300-976e-11ea-9fcd-feb20a4bbb78.png)
@@ -16,9 +16,15 @@ Traffic Watch is built using free and open source software, open standards, and 
 
 ## Anomaly detection
 The Application can also use the historical detection data to create a cloud of the movement patterns and identify the
-anomalies in the movement data. It can help detect dangerous driving patterns or unusual crossing locations in streets.
+anomalies in the movement data. It can help detect dangerous driving patterns or unusual pedestrian crossing locations in the streets.
 
+#### Vehicle movement patterns
 Here is an example of vehicle movement pattern for a specific location:
 
 ![image](https://user-images.githubusercontent.com/32692718/82127524-76e46680-9771-11ea-9bab-53326c1b8796.png)
 
+
+#### Pedestrian movement patterns
+Here is an example showing the pedestrian movement pattern while crossing the same intersection:
+
+![image](https://user-images.githubusercontent.com/32692718/82127748-2f5eda00-9773-11ea-8163-b927a25e64e3.png)
