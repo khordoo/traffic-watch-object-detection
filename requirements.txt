@@ -5,7 +5,7 @@ cycler==0.10.0
 cython==0.29.13
 decorator==4.4.0
 Flask==1.1.1
-Flask-Cors==3.0.8
+Flask-Cors==3.0.9
 gast==0.3.0
 google-pasta==0.1.7
 grpcio==1.23.0
